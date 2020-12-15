@@ -65,8 +65,8 @@ int main()
   if (ds.validity == false) {
     return 1;
   }
-  // std::cout << ds.ncols << std::endl;
-  // std::cout << "The value of the pixel at [row][col]/[0][2] is: " << ds.data[0][2] << std::endl;
+  std::cout << ds.ncols << std::endl;
+  std::cout << "The value of the pixel at [row][col]/[0][2] is: " << ds.data[504][549] << std::endl;
 
   output_viewshed(ds, viewpoints, maxdistance, output_file);
 
