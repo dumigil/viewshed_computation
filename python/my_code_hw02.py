@@ -1,9 +1,8 @@
 #-- my_code_hw02.py
 #-- Assignment 02 GEO1015.2020
-#-- [YOUR NAME] 
-#-- [YOUR STUDENT NUMBER] 
-#-- [YOUR NAME] 
-#-- [YOUR STUDENT NUMBER] 
+#-- Michiel de Jong  
+#-- 4376978 
+ 
 
 import sys
 import math
@@ -11,6 +10,8 @@ import numpy
 import rasterio
 from rasterio import features
 
+def distance(point1, point2):
+	    return math.sqrt(((point2[0]-point1[0])*(point2[0]-point1[0]))+((point2[1]-point1[1])*(point2[1]-point1[1])))
 
 def output_viewshed(d, viewpoints, maxdistance, output_file):
     """
@@ -42,38 +43,60 @@ def output_viewshed(d, viewpoints, maxdistance, output_file):
     #-- put that pixel with value 2
     npvs[vrow , vcol] = 2
     vind = (vrow, vcol)
-    print(npi[300][300])
+    print(npi[vind])
     test_row, test_col = d.index((v[0]+maxdistance), v[1])
-    print(test_row, test_col)
     r = test_col - vcol
     circle_cells = []
-    for angle in numpy.arange(0, 360, 0.5):
-        x = r * math.sin(math.radians(angle)) + vcol
-        y = r * math.cos(math.radians(angle)) + vrow
-        npvs[int(round(y))][int(round(x))] = 2
+    for angle in numpy.arange(0, 360, 0.1):
+        x = r * math.sin(math.radians(angle)) + vrow
+        y = r * math.cos(math.radians(angle)) + vcol
+
         circle_cells.append((int(round(x)),int(round(y))))
     circle_cell_final = list(set(circle_cells))
 
-    '''for y in range(d.shape[1]):
-        for x in range(d.shape[0]):
-            if abs((x-vrow)**2 + (y-vcol)**2 - r**2) == EPSILON**2:
-                circle_cells.append((x,y))
-                npvs[x,y] = 2'''
+    
     
     for cell in circle_cell_final:
         line_pq = Bresenham_with_rasterio(d, vind, cell)
-        walkline = []
+        init_height = npi[vind[0],vind[1]] +v[2] 
         x, y = ((numpy.where(line_pq)))
         XY = [i for i in zip(x, y)]
         if XY[0] != vind:
-            XY = numpy.flipud(XY)
-        for pixel in XY:
-            walkline.append((npi[pixel[0]][pixel[1]]))
-        print((XY[1]))
-                
+            XY = XY[::-1]
+        else:
+            pass
+        
+        
+        cell_1 = d.xy(XY[1][0],XY[1][1])
+        dis_init = distance(v, cell_1)
+
+        slope_init = ((npi[XY[1]])-init_height) / dis_init
+        tcur = (slope_init * dis_init) + init_height
+        #print(init_height)
+        #print(npi[XY[1]])
+        #print(dis_init)
+        #print(slope_init)
+        print(XY)
+        for i, pos in enumerate(XY):
+            if npvs[XY[i]] == 3:
+                if [XY[i]] != vind:
+                    point = d.xy(XY[i][0],XY[i][1])
+                    prev_point = d.xy(XY[i-1][0],XY[i-1][1])
+                    dx = distance(point,prev_point)
+
+                    tcur = (slope_init * distance(v, point)) + init_height                       
+                    #print(tcur)
+
+                    if tcur <= npi[XY[i]]:
+                        npvs[XY[i]] = 1
+                        slope_init = (npi[XY[i]]- init_height) / distance(v,point)
+                        tcur = (slope_init * distance(v, point)) + init_height                       
+                    else:
+                        npvs[XY[i]] = 0
+            
     #-- write this to disk
     with rasterio.open(output_file, 'w', 
-                       driver='GTiff', 
+                       driver='GTiff',  
                        height=npi.shape[0],
                        width=npi.shape[1], 
                        count=1, 
@@ -84,16 +107,6 @@ def output_viewshed(d, viewpoints, maxdistance, output_file):
 
     print("Viewshed file written to '%s'" % output_file)
 
-def viewshed_circle(d,v,maxdistance):
-    center = v
-    radius = maxdistance / d.shape[0]
-    height = d.shape[0]
-    width = d.shape[1]
-    Y, X = numpy.ogrid[:height,:width]
-    dist_from_center = numpy.sqrt((X - center[0])**2 + (Y - center[1])**2)
-    mask = dist_from_center <= radius
-    numpy.savetxt('mask.txt', mask)
-    return mask
 
 
 
@@ -107,7 +120,6 @@ def Bresenham_with_rasterio(d, v, q):
     v["coordinates"].append(d.xy(a[0], a[1]))
     v["coordinates"].append(d.xy(b[0], b[1]))
     shapes = [(v, 1)]
-    line_list = []
     re = features.rasterize(shapes, 
                              out_shape=d.shape, 
                              all_touched=True,
