@@ -27,17 +27,13 @@ def output_viewshed(d, viewpoints, maxdistance, output_file):
         
     Output:
         none (but output GeoTIFF file written to 'output-file')
-    """  
-    
-    # [this code can and should be removed/modified/reutilised]
-    # [it's just there to help you]
+    """ 
 
     #-- numpy of input
     npi  = d.read(1)
     npvs = numpy.full(d.shape,3 ,dtype=numpy.int8)
 
     for num, each in enumerate(viewpoints):
-
         #-- fetch the 1st viewpoint
         v = viewpoints[num]
         #-- index of this point in the numpy raster
@@ -45,60 +41,59 @@ def output_viewshed(d, viewpoints, maxdistance, output_file):
         #-- the results of the viewshed in npvs, all values=0
         #-- put that pixel with value 2
         vind = (vrow, vcol)
-        print([vind])
+        #calculate raster in index space
         test_row, test_col = d.index((v[0]+maxdistance), v[1])
         r = test_col - vcol
         circle_cells = []
-        for angle in numpy.arange(0, 360, 0.1):
+
+        #construct the circle
+        for angle in numpy.arange(0, 360, 1/len(npi)):
             x = r * math.sin(math.radians(angle)) + vrow
             y = r * math.cos(math.radians(angle)) + vcol
-
             circle_cells.append((int(round(x)),int(round(y))))
+        
+        #remove duplicates
         circle_cell_final = list(set(circle_cells))
-        print(len(circle_cells))
-        print(len(circle_cell_final))
-        
-        
+
+        #perform LoS queries on all cells in circle
         for cell in circle_cell_final:
             XY = Bresenham_with_rasterio(d, vind, cell)
-            init_height = npi[vind[0],vind[1]] +v[2] 
-            #x_new, y_new = ((numpy.where(line_pq)))
-            #print(x_new,y_new)
-            #XY = [i for i in zip(x_new, y_new)]
-                      
             
+            #initial height is height in DEM + eyeheight from .json
+            init_height = npi[vind[0],vind[1]] +v[2] 
+            
+            #calculate delta x for initial tangent
             cell_1 = d.xy(XY[1][0],XY[1][1])
             dis_init = distance(v, cell_1)
 
+            #calculate initial slope and initial tangent
             slope_init = ((npi[XY[1]])-init_height) / dis_init
             tcur = (slope_init * dis_init) + init_height
-            print(npi[XY[1]])
-            print(dis_init)
-            print(slope_init)
-            #print(XY[0],XY[-1])
-
+            
+            #loop through all points on line, except those that have already been seen
             for i, pos in enumerate(XY):
                 if npvs[XY[i]] != 1 and npvs[XY[i]] != 2:
                     if [XY[i]] != vind:
+                        #get xy coords
                         point = d.xy(XY[i][0],XY[i][1])
-                        prev_point = d.xy(XY[i-1][0],XY[i-1][1])
-                        dx = distance(point,prev_point)
-
+                        #check tcur value for this pixel
                         tcur = (slope_init * distance(v, point)) + init_height                       
-                        #print(tcur)
                         if tcur <= npi[XY[i]]:
+                            #visible! yes!
                             npvs[XY[i]] = 1
+                            #update slope and tangent
                             slope_init = (npi[XY[i]]- init_height) / distance(v,point)
-                            #tcur = (slope_init * distance(v, point)) + init_height                       
+                            tcur = (slope_init * distance(v, point)) + init_height                       
                         else:
+                            #invisible
                             npvs[XY[i]] = 0
                     else:
                         continue
                 else:
                     continue
+        #make sure we can see the viewpoints
         npvs[vrow , vcol] = 2
-
-            
+        
     #-- write this to disk
     with rasterio.open(output_file, 'w', 
                     driver='GTiff',  
@@ -112,9 +107,6 @@ def output_viewshed(d, viewpoints, maxdistance, output_file):
 
     print("Viewshed file written to '%s'" % output_file)
 
-
-
-
 def Bresenham_with_rasterio(d, v, q):
     a = v
     b = q
@@ -125,23 +117,25 @@ def Bresenham_with_rasterio(d, v, q):
     v["coordinates"].append(d.xy(a[0], a[1]))
     v["coordinates"].append(d.xy(b[0], b[1]))
     shapes = [(v, 1)]
-    #print(shapes)
-
+    
     re = features.rasterize(shapes, 
                              out_shape=d.shape, 
-                             all_touched=True,
+                             all_touched=False,
                              transform=d.transform)
-    # re is a numpy with d.shape where the line is rasterised (values != 0)
-
+    #find where array is true
     where = numpy.argwhere(re==1)
-    out = []
+    line = []
+
+    #sort according to which quarter of circle
     for i in where:
-        out.append(tuple(i))
-    if a[0]>b[0] and a[1]<=b[1]:
-        out = sorted(out, key = lambda k: (-k[0], k[1]))
-    elif a[0]>b[0] and a[1]>=b[1]:
-        out = sorted(out, key = lambda k: (-k[0], -k[1]))
+        line.append(tuple(i))
+    if a[0]<b[0] and a[1]<=b[1]:
+        line = sorted(line, key = lambda k: (k[0], k[1]))
+    elif a[0]>b[0] and a[1]<=b[1]:
+        line = sorted(line, key = lambda k: (-k[0], k[1]))
     elif a[0]<=b[0] and a[1]>b[1]:
-        out = sorted(out, key = lambda k: (k[0], -k[1]))        
-    return out
+        line = sorted(line, key = lambda k: (k[0], -k[1]))
+    elif a[0]>b[0] and a[1]>=b[1]:
+        line = sorted(line, key = lambda k: (-k[0], -k[1]))
+    return line
 
